@@ -19,7 +19,7 @@ Upper octave (C4 to E5)
 
 Lower octave (C3 to B3)
   White:  A   S   D   F   G   H   J
-  Black:    Z   X       V   B   N
+  Black:    Z   X   C   V  B
 ```
 
 ## Assets
