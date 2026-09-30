@@ -1,3 +1,10 @@
+## Interaction Elements Overview
+1. Position: keys are pressed down when clicked
+2. Position/Animation: when clicking enter or arrow keys the keyboard changes position with an animation
+3. Colours/Particles (ish): when you press a key the colour associated appears and floats up
+4. Audio: when you press a key you hear the audio connected
+5. Particles: Left click + drag creates a sparkle particle system
+
 ## Assets
 Piano: Piano Keys by Ron Millar [CC-BY] (https://creativecommons.org/licenses/by/3.0/) via Poly Pizza (https://poly.pizza/m/akGT4Q8Zbwz)
 ## Piano Interaction
