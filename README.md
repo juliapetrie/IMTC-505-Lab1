@@ -21,3 +21,6 @@ Lower octave (C3 to B3)
 - **Space**: hold to let notes ring after releasing the key
 - **Mouse**: click a key to play it, or hold and drag across keys
 - Holding a key sends up a stream of floating music notes, each key in its own colour
+- **Enter**: twirl
+- **↑ / ↓**: log roll away / toward you
+-  **→ / ←**: clock spin clockwise / counterclockwise
