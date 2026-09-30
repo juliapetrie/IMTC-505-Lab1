@@ -25,3 +25,5 @@ Lower octave (C3 to B3)
 ## Assets
 
 Piano: "Piano Keys" by Ron Millar, [CC-BY 3.0](https://creativecommons.org/licenses/by/3.0/), via [Poly Pizza](https://poly.pizza/m/akGT4Q8Zbwz)
+
+**Sounds, music notes, and sparkles: generated in code (no external files)**
