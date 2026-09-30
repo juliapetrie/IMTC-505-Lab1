@@ -59,13 +59,20 @@ public class PianoController : MonoBehaviour
     public Camera inputCamera;
     public bool mouseInput = true;
     public bool computerKeyboardInput = true;
-    [Tooltip("Computer keys for the white piano keys, left to right, starting at keyboardBaseNote.")]
-    public string whiteKeyRow = "asdfghjkl";
-    [Tooltip("Computer keys for the black piano keys. Each character sits above the gap to the right of the white key " +
-             "at the same position in whiteKeyRow. Use a space where there is no black key (E-F and B-C).")]
-    public string blackKeyRow = "we tyu o";
-    [Tooltip("MIDI note of the first white key in whiteKeyRow. 60 = middle C. Must be a white note.")]
+    [Tooltip("MIDI note of the first white key in whiteKeyRow. 60 = middle C. Must be a white note. " +
+             "The lower rows start one octave below this.")]
     public int keyboardBaseNote = 60;
+    [Tooltip("Computer keys for the white piano keys of the upper octave, left to right, starting at keyboardBaseNote.")]
+    public string whiteKeyRow = "qwertyuiop";
+    [Tooltip("Computer keys for the black piano keys of the upper octave. Each character sits above the gap to the right " +
+             "of the white key at the same position in whiteKeyRow. Use a space where there is no black key (E-F and B-C).")]
+    public string blackKeyRow = "23 567 90";
+    [Tooltip("Computer keys for the white piano keys of the lower octave, starting one octave below keyboardBaseNote. Leave empty to skip.")]
+    public string lowerWhiteKeyRow = "zxcvbnm";
+    [Tooltip("Computer keys for the black piano keys of the lower octave, laid out the same way as blackKeyRow.")]
+    public string lowerBlackKeyRow = "sd ghj";
+    [Tooltip("Hide piano keys that have no computer key assigned, so only playable keys are shown.")]
+    public bool hideUnmappedKeys = true;
     [Tooltip("Hold Space to sustain.")]
     public bool spaceIsSustainPedal = true;
 
@@ -86,6 +93,8 @@ public class PianoController : MonoBehaviour
         public Quaternion restRot;
         public Vector3 pivotLocal;
         public float length;
+        public Vector3 topLocal;
+        public float width;
         public float press;
         public bool applied;
         public int holdCount;
@@ -105,6 +114,7 @@ public class PianoController : MonoBehaviour
     readonly List<char> mappedChars = new List<char>();
     readonly List<int> mappedNotes = new List<int>();
     bool[] computerKeyHeld;
+
     bool sustain;
 
     void Start()
@@ -128,7 +138,9 @@ public class PianoController : MonoBehaviour
                 restPos = child.localPosition,
                 restRot = child.localRotation,
                 pivotLocal = b.center + back * Extent(b, back),
-                length = 2f * Extent(b, back)
+                length = 2f * Extent(b, back),
+                topLocal = b.center + up * Extent(b, up),
+                width = 2f * Extent(b, lh)
             };
             keys.Add(k);
             tops.Add(Vector3.Dot(b.center, up) + Extent(b, up));
@@ -176,6 +188,7 @@ public class PianoController : MonoBehaviour
         }
 
         BuildComputerKeyMap();
+        if (hideUnmappedKeys && computerKeyboardInput) HideUnmappedKeys();
         int blackCount = 0;
         foreach (Key k in keys) if (k.black) blackCount++;
         Debug.Log($"PianoController: {keys.Count} keys ({blackCount} black), lowest note MIDI {firstNote}.");
@@ -197,6 +210,24 @@ public class PianoController : MonoBehaviour
 
     public void PressNote(int midiNote) { if (byNote.TryGetValue(midiNote, out Key k)) Press(k); }
     public void ReleaseNote(int midiNote) { if (byNote.TryGetValue(midiNote, out Key k)) Release(k); }
+
+    /// <summary>Fills results with the MIDI notes of all keys currently held down.</summary>
+    public void GetHeldNotes(List<int> results)
+    {
+        results.Clear();
+        foreach (Key k in keys) if (k.holdCount > 0) results.Add(k.note);
+    }
+
+    /// <summary>World position of the top of a key at rest, plus the key's width and the piano's up direction.</summary>
+    public bool TryGetKeyTop(int midiNote, out Vector3 worldTop, out float worldWidth, out Vector3 worldUp)
+    {
+        worldTop = Vector3.zero; worldWidth = 0f; worldUp = Vector3.up;
+        if (keysParent == null || !byNote.TryGetValue(midiNote, out Key k)) return false;
+        worldTop = keysParent.TransformPoint(k.topLocal);
+        worldWidth = keysParent.TransformVector(lowToHighAxis.normalized * k.width).magnitude;
+        worldUp = keysParent.TransformDirection(upAxis).normalized;
+        return true;
+    }
 
     public void SetSustain(bool on)
     {
@@ -259,30 +290,62 @@ public class PianoController : MonoBehaviour
     {
         mappedChars.Clear();
         mappedNotes.Clear();
+        AddKeyRows(lowerWhiteKeyRow, lowerBlackKeyRow, keyboardBaseNote - 12);
+        AddKeyRows(whiteKeyRow, blackKeyRow, keyboardBaseNote);
+        computerKeyHeld = new bool[mappedChars.Count];
+    }
 
-        int note = keyboardBaseNote;
+    void AddKeyRows(string whiteRow, string blackRow, int note)
+    {
+        if (string.IsNullOrEmpty(whiteRow)) return;
+        if (blackRow == null) blackRow = "";
         if (blackPitchClass[((note % 12) + 12) % 12])
         {
             Debug.LogWarning("PianoController: keyboardBaseNote is a black key, moving it up to the next white key.");
             note++;
         }
 
-        for (int i = 0; i < whiteKeyRow.Length; i++)
+        for (int i = 0; i < whiteRow.Length; i++)
         {
-            mappedChars.Add(whiteKeyRow[i]);
-            mappedNotes.Add(note);
+            AddMapping(whiteRow[i], note);
 
             bool hasBlack = blackPitchClass[(note + 1) % 12];
-            char blackChar = i < blackKeyRow.Length ? blackKeyRow[i] : ' ';
+            char blackChar = i < blackRow.Length ? blackRow[i] : ' ';
             if (blackChar != ' ')
             {
-                if (hasBlack) { mappedChars.Add(blackChar); mappedNotes.Add(note + 1); }
-                else Debug.LogWarning($"PianoController: '{blackChar}' in blackKeyRow sits where there is no black key; it was skipped.");
+                if (hasBlack) AddMapping(blackChar, note + 1);
+                else Debug.LogWarning($"PianoController: '{blackChar}' sits where there is no black key; it was skipped.");
             }
 
             note += hasBlack ? 2 : 1;   // step to the next white key
         }
-        computerKeyHeld = new bool[mappedChars.Count];
+    }
+
+    void AddMapping(char c, int note)
+    {
+        c = char.ToLower(c);
+        if (mappedChars.Contains(c))
+        {
+            Debug.LogWarning($"PianoController: '{c}' is used in more than one key row; only its first use counts.");
+            return;
+        }
+        mappedChars.Add(c);
+        mappedNotes.Add(note);
+    }
+
+    void HideUnmappedKeys()
+    {
+        var playable = new HashSet<int>(mappedNotes);
+        for (int i = keys.Count - 1; i >= 0; i--)
+        {
+            Key k = keys[i];
+            if (playable.Contains(k.note)) continue;
+            k.t.gameObject.SetActive(false);
+            byTransform.Remove(k.t);
+            byNote.Remove(k.note);
+            keys.RemoveAt(i);
+        }
+        Debug.Log($"PianoController: showing {keys.Count} playable keys, the rest are hidden.");
     }
 
     bool IsComputerKeyDown(char c)

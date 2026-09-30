@@ -359,6 +359,155 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &1170042554
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1.67
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1.67
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 1.18972
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 4.14394
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3627744151775195504, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5861069733216532766, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      propertyPath: m_Name
+      value: Piano Keys by Ron Millar - akGT4Q8Zbwz
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 5861069733216532766, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1170042556}
+    - targetCorrespondingSourceObject: {fileID: 5861069733216532766, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1170042560}
+  m_SourcePrefab: {fileID: 3150474306388093854, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+--- !u!1 &1170042555 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 5861069733216532766, guid: 6669c14c4b3a4b545aae10493c61da8b, type: 3}
+  m_PrefabInstance: {fileID: 1170042554}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1170042556
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1170042555}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e40e06e066a548844a8392b979c1bd8a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PianoController
+  keysParent: {fileID: 0}
+  keyNameFilter: 
+  splitSingleMeshIntoKeys: 1
+  firstNote: -1
+  autoDetectFirstNote: 1
+  lowToHighAxis: {x: 1, y: 0, z: 0}
+  towardBackAxis: {x: 0, y: 0, z: 1}
+  upAxis: {x: 0, y: 1, z: 0}
+  pressStyle: 0
+  pressAngle: 4
+  pressDepth: 0
+  pressTime: 0.04
+  releaseTime: 0.08
+  sample: {fileID: 0}
+  sampleNote: 60
+  volume: 0.8
+  spatialBlend: 0
+  noteReleaseFade: 0.25
+  inputCamera: {fileID: 0}
+  mouseInput: 1
+  computerKeyboardInput: 1
+  keyboardBaseNote: 60
+  whiteKeyRow: qwertyuiop
+  blackKeyRow: 23 567 90
+  lowerWhiteKeyRow: asdfghj
+  lowerBlackKeyRow: zx cvb
+  hideUnmappedKeys: 1
+  spaceIsSustainPedal: 1
+  logPresses: 1
+  onNoteDown:
+    m_PersistentCalls:
+      m_Calls: []
+  onNoteUp:
+    m_PersistentCalls:
+      m_Calls: []
+--- !u!114 &1170042560
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1170042555}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6863fbdd07996ef44a930c76df7de3b5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MusicNotes
+  spawnInterval: 0.18
+  lifetime: 2.5
+  size: 2.5
+  riseHeight: 12
+  swayAmount: 0.6
+  oneColourPerKey: 1
+  colours:
+  - {r: 1, g: 0.36, b: 0.45, a: 1}
+  - {r: 1, g: 0.66, b: 0.2, a: 1}
+  - {r: 1, g: 0.88, b: 0.25, a: 1}
+  - {r: 0.35, g: 0.85, b: 0.45, a: 1}
+  - {r: 0.3, g: 0.72, b: 1, a: 1}
+  - {r: 0.62, g: 0.45, b: 1, a: 1}
+  faceCamera: {fileID: 0}
 --- !u!1 &2013650879
 GameObject:
   m_ObjectHideFlags: 0
@@ -445,13 +594,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2013650879}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.27920526, y: -0, z: -0, w: 0.9602314}
-  m_LocalPosition: {x: 0, y: 5.1, z: -8.22}
+  m_LocalRotation: {x: 0.39989352, y: -0, z: -0, w: 0.9165616}
+  m_LocalPosition: {x: 1.3, y: 4, z: 0.6}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 32.426, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 47.143, y: 0, z: 0}
 --- !u!114 &2013650883
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -503,3 +652,4 @@ SceneRoots:
   - {fileID: 2013650882}
   - {fileID: 498643566}
   - {fileID: 728631860}
+  - {fileID: 1170042554}
