@@ -1,32 +1,22 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Events;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
 
 /// <summary>
-/// Drop on the piano root. Finds each key under keysParent, sorts them low to high,
-/// assigns MIDI notes, adds colliders and AudioSources, animates keys down/up,
-/// and plays either a pitched sample or a generated piano-like tone.
-/// Works with the old Input Manager and the new Input System.
+/// Drop on the piano root. Splits the keyboard mesh into separate keys if needed, sorts them
+/// low to high, assigns MIDI notes, animates keys when pressed, and plays a pitched sample or
+/// a generated piano-like tone. Play with the mouse or the computer keyboard.
 /// </summary>
 public class PianoController : MonoBehaviour
 {
-    public enum PressStyle { Rotate, Translate }
-
     [Header("Keys")]
-    [Tooltip("Object whose direct children are the individual keys. Defaults to this object.")]
+    [Tooltip("Object whose children are the keys. Defaults to this object.")]
     public Transform keysParent;
-    [Tooltip("Only children whose name contains this text count as keys (leave empty for all children).")]
-    public string keyNameFilter = "";
-    [Tooltip("If all the keys are one mesh, split it into one object per key at startup (mesh needs Read/Write enabled).")]
-    public bool splitSingleMeshIntoKeys = true;
-    [Tooltip("MIDI note of the leftmost key. -1 = automatic (A0 for 88 keys, otherwise centered on middle C). 21 = A0, 48 = C3, 60 = middle C.")]
+    [Tooltip("MIDI note of the leftmost key. -1 = automatic (centered on middle C). 48 = C3, 60 = middle C.")]
     public int firstNote = -1;
-    [Tooltip("Adjust firstNote using the black/white key pattern (keeps the octave closest to firstNote).")]
-    public bool autoDetectFirstNote = true;
 
     [Header("Piano axes (in keysParent local space)")]
     [Tooltip("Direction from low notes to high notes.")]
@@ -36,11 +26,8 @@ public class PianoController : MonoBehaviour
     public Vector3 upAxis = Vector3.up;
 
     [Header("Key motion")]
-    public PressStyle pressStyle = PressStyle.Rotate;
     [Tooltip("Degrees the key tips down. Make it negative if keys rotate the wrong way.")]
     public float pressAngle = 4f;
-    [Tooltip("Translate mode only. 0 = automatic (6% of key length).")]
-    public float pressDepth = 0f;
     public float pressTime = 0.04f;
     public float releaseTime = 0.08f;
 
@@ -56,33 +43,23 @@ public class PianoController : MonoBehaviour
     public float noteReleaseFade = 0.25f;
 
     [Header("Input")]
-    public Camera inputCamera;
     public bool mouseInput = true;
     public bool computerKeyboardInput = true;
-    [Tooltip("MIDI note of the first white key in whiteKeyRow. 60 = middle C. Must be a white note. " +
-             "The lower rows start one octave below this.")]
+    [Tooltip("MIDI note of the first white key in whiteKeyRow. 60 = middle C. The lower rows start one octave below.")]
     public int keyboardBaseNote = 60;
-    [Tooltip("Computer keys for the white piano keys of the upper octave, left to right, starting at keyboardBaseNote.")]
+    [Tooltip("Computer keys for the white piano keys of the upper octave, left to right.")]
     public string whiteKeyRow = "qwertyuiop";
-    [Tooltip("Computer keys for the black piano keys of the upper octave. Each character sits above the gap to the right " +
-             "of the white key at the same position in whiteKeyRow. Use a space where there is no black key (E-F and B-C).")]
+    [Tooltip("Computer keys for the upper black keys. Each character sits above the gap to the right of the white key " +
+             "at the same position in whiteKeyRow. Use a space where there is no black key (E-F and B-C).")]
     public string blackKeyRow = "23 567 90";
-    [Tooltip("Computer keys for the white piano keys of the lower octave, starting one octave below keyboardBaseNote. Leave empty to skip.")]
+    [Tooltip("Computer keys for the white piano keys of the lower octave. Leave empty to skip.")]
     public string lowerWhiteKeyRow = "zxcvbnm";
-    [Tooltip("Computer keys for the black piano keys of the lower octave, laid out the same way as blackKeyRow.")]
+    [Tooltip("Computer keys for the lower black keys, laid out the same way as blackKeyRow.")]
     public string lowerBlackKeyRow = "sd ghj";
-    [Tooltip("Hide piano keys that have no computer key assigned, so only playable keys are shown.")]
+    [Tooltip("Hide piano keys that have no computer key assigned.")]
     public bool hideUnmappedKeys = true;
     [Tooltip("Hold Space to sustain.")]
     public bool spaceIsSustainPedal = true;
-
-    [Header("Debug")]
-    [Tooltip("Log each key press and anything the mouse hits that isn't a key.")]
-    public bool logPresses = true;
-
-    [Header("Events (MIDI note number)")]
-    public UnityEvent<int> onNoteDown;
-    public UnityEvent<int> onNoteUp;
 
     class Key
     {
@@ -92,9 +69,8 @@ public class PianoController : MonoBehaviour
         public Vector3 restPos;
         public Quaternion restRot;
         public Vector3 pivotLocal;
-        public float length;
         public Vector3 topLocal;
-        public float width;
+        public float length, width;
         public float press;
         public bool applied;
         public int holdCount;
@@ -109,65 +85,50 @@ public class PianoController : MonoBehaviour
     static readonly Dictionary<int, AudioClip> toneCache = new Dictionary<int, AudioClip>();
     static readonly bool[] blackPitchClass = { false, true, false, true, false, false, true, false, true, false, true, false };
 
-    Key mouseKey;
-    Collider lastNonKeyHit;
     readonly List<char> mappedChars = new List<char>();
     readonly List<int> mappedNotes = new List<int>();
     bool[] computerKeyHeld;
-
+    Key mouseKey;
     bool sustain;
 
     void Start()
     {
         if (keysParent == null) keysParent = transform;
-        if (splitSingleMeshIntoKeys) TrySplitSingleMesh();
+        TrySplitSingleMesh();
         Vector3 lh = lowToHighAxis.normalized, back = towardBackAxis.normalized, up = upAxis.normalized;
 
         // Collect keys and measure them in keysParent space.
-        var tops = new List<float>();
-        var order = new List<float>();
+        var tops = new Dictionary<Key, float>();
+        var order = new Dictionary<Key, float>();
         foreach (Transform child in keysParent)
         {
-            if (!string.IsNullOrEmpty(keyNameFilter) &&
-                !child.name.ToLower().Contains(keyNameFilter.ToLower())) continue;
             if (!TryLocalBounds(child, out Bounds b)) continue;
-
             var k = new Key
             {
                 t = child,
                 restPos = child.localPosition,
                 restRot = child.localRotation,
                 pivotLocal = b.center + back * Extent(b, back),
-                length = 2f * Extent(b, back),
                 topLocal = b.center + up * Extent(b, up),
+                length = 2f * Extent(b, back),
                 width = 2f * Extent(b, lh)
             };
             keys.Add(k);
-            tops.Add(Vector3.Dot(b.center, up) + Extent(b, up));
-            order.Add(Vector3.Dot(b.center, lh));
+            tops[k] = Vector3.Dot(b.center, up) + Extent(b, up);
+            order[k] = Vector3.Dot(b.center, lh);
         }
 
         if (keys.Count == 0)
         {
-            Debug.LogWarning("PianoController: no keys found under " + keysParent.name +
-                             ". Each key needs to be its own child object with a mesh.");
+            Debug.LogWarning("PianoController: no keys found. Each key needs to be its own child object with a mesh.");
             enabled = false;
             return;
         }
 
-        // Sort low to high.
-        var idx = new List<int>();
-        for (int i = 0; i < keys.Count; i++) idx.Add(i);
-        idx.Sort((a, c) => order[a].CompareTo(order[c]));
-        var sortedKeys = new List<Key>();
-        var sortedTops = new List<float>();
-        foreach (int i in idx) { sortedKeys.Add(keys[i]); sortedTops.Add(tops[i]); }
-        keys.Clear();
-        keys.AddRange(sortedKeys);
-
-        if (firstNote < 0) firstNote = keys.Count >= 88 ? 21 : 60 - keys.Count / 2;
-        ClassifyBlackKeys(sortedTops);
-        if (autoDetectFirstNote) DetectFirstNote();
+        keys.Sort((a, c) => order[a].CompareTo(order[c]));
+        ClassifyBlackKeys(tops);
+        if (firstNote < 0) firstNote = 60 - keys.Count / 2;
+        DetectFirstNote();
 
         for (int i = 0; i < keys.Count; i++)
         {
@@ -176,12 +137,7 @@ public class PianoController : MonoBehaviour
             byTransform[k.t] = k;
             byNote[k.note] = k;
 
-            if (k.t.GetComponentInChildren<Collider>() == null)
-            {
-                if (k.t.GetComponent<MeshFilter>() != null) k.t.gameObject.AddComponent<BoxCollider>();
-                else foreach (var mf in k.t.GetComponentsInChildren<MeshFilter>()) mf.gameObject.AddComponent<BoxCollider>();
-            }
-
+            if (k.t.GetComponentInChildren<Collider>() == null) k.t.gameObject.AddComponent<BoxCollider>();
             k.src = k.t.gameObject.AddComponent<AudioSource>();
             k.src.playOnAwake = false;
             k.src.spatialBlend = spatialBlend;
@@ -189,14 +145,6 @@ public class PianoController : MonoBehaviour
 
         BuildComputerKeyMap();
         if (hideUnmappedKeys && computerKeyboardInput) HideUnmappedKeys();
-        int blackCount = 0;
-        foreach (Key k in keys) if (k.black) blackCount++;
-        Debug.Log($"PianoController: {keys.Count} keys ({blackCount} black), lowest note MIDI {firstNote}.");
-
-        if (FindAnyObjectByType<AudioListener>() == null)
-            Debug.LogWarning("PianoController: no Audio Listener in the scene, so nothing will be heard. Add one to your camera.");
-        if (AudioListener.volume <= 0f)
-            Debug.LogWarning("PianoController: AudioListener volume is 0.");
     }
 
     void Update()
@@ -206,7 +154,7 @@ public class PianoController : MonoBehaviour
         AnimateKeys();
     }
 
-    // ---------- Public API (VR hands, MIDI input, scripted playback) ----------
+    // ---------- Public API (used by MusicNotes, PianoTricks, and anything else that plays the piano) ----------
 
     public void PressNote(int midiNote) { if (byNote.TryGetValue(midiNote, out Key k)) Press(k); }
     public void ReleaseNote(int midiNote) { if (byNote.TryGetValue(midiNote, out Key k)) Release(k); }
@@ -218,14 +166,21 @@ public class PianoController : MonoBehaviour
         foreach (Key k in keys) if (k.holdCount > 0) results.Add(k.note);
     }
 
+    /// <summary>Fills results with the MIDI notes of all visible keys, low to high.</summary>
+    public void GetPlayableNotes(List<int> results, bool whiteKeysOnly)
+    {
+        results.Clear();
+        foreach (Key k in keys) if (!whiteKeysOnly || !k.black) results.Add(k.note);
+    }
+
     /// <summary>World position of the top of a key at rest, plus the key's width and the piano's up direction.</summary>
     public bool TryGetKeyTop(int midiNote, out Vector3 worldTop, out float worldWidth, out Vector3 worldUp)
     {
         worldTop = Vector3.zero; worldWidth = 0f; worldUp = Vector3.up;
-        if (keysParent == null || !byNote.TryGetValue(midiNote, out Key k)) return false;
+        if (!byNote.TryGetValue(midiNote, out Key k)) return false;
         worldTop = keysParent.TransformPoint(k.topLocal);
         worldWidth = keysParent.TransformVector(lowToHighAxis.normalized * k.width).magnitude;
-        worldUp = keysParent.TransformDirection(upAxis).normalized;
+        worldUp = WorldAxis(upAxis);
         return true;
     }
 
@@ -236,45 +191,35 @@ public class PianoController : MonoBehaviour
         return root.TransformDirection(localAxis).normalized;
     }
 
-    /// <summary>Fills results with the MIDI notes of all visible keys, low to high.</summary>
-    public void GetPlayableNotes(List<int> results, bool whiteKeysOnly)
-    {
-        results.Clear();
-        foreach (Key k in keys) if (!whiteKeysOnly || !k.black) results.Add(k.note);
-    }
-
-    public void SetSustain(bool on)
-    {
-        sustain = on;
-        if (!on)
-            foreach (var k in keys)
-                if (k.holdCount == 0 && k.sounding) StopSound(k);
-    }
-
     // ---------- Input ----------
 
     void HandleMouse()
     {
-        bool held = false;
-        Vector2 pos = Vector2.zero;
+        bool held;
+        Vector2 pos;
 #if ENABLE_INPUT_SYSTEM
-        if (Mouse.current != null)
-        {
-            held = Mouse.current.leftButton.isPressed;
-            pos = Mouse.current.position.ReadValue();
-        }
+        if (Mouse.current == null) return;
+        held = Mouse.current.leftButton.isPressed;
+        pos = Mouse.current.position.ReadValue();
 #else
         held = Input.GetMouseButton(0);
         pos = Input.mousePosition;
 #endif
         // Dragging across keys plays each one (glissando).
         Key hovered = held ? RaycastKey(pos) : null;
-        if (hovered != mouseKey)
-        {
-            if (mouseKey != null) Release(mouseKey);
-            if (hovered != null) Press(hovered);
-            mouseKey = hovered;
-        }
+        if (hovered == mouseKey) return;
+        if (mouseKey != null) Release(mouseKey);
+        if (hovered != null) Press(hovered);
+        mouseKey = hovered;
+    }
+
+    Key RaycastKey(Vector2 screenPos)
+    {
+        Camera cam = Camera.main;
+        if (cam == null || !Physics.Raycast(cam.ScreenPointToRay(screenPos), out RaycastHit hit)) return null;
+        for (Transform t = hit.collider.transform; t != null; t = t.parent)
+            if (byTransform.TryGetValue(t, out Key k)) return k;
+        return null;
     }
 
     void HandleComputerKeyboard()
@@ -288,16 +233,23 @@ public class PianoController : MonoBehaviour
             else ReleaseNote(mappedNotes[i]);
         }
 
-        if (spaceIsSustainPedal)
-        {
-            bool space;
+        if (!spaceIsSustainPedal) return;
 #if ENABLE_INPUT_SYSTEM
-            space = Keyboard.current != null && Keyboard.current.spaceKey.isPressed;
+        bool space = Keyboard.current != null && Keyboard.current.spaceKey.isPressed;
 #else
-            space = Input.GetKey(KeyCode.Space);
+        bool space = Input.GetKey(KeyCode.Space);
 #endif
-            if (space != sustain) SetSustain(space);
-        }
+        if (space != sustain) SetSustain(space);
+    }
+
+    bool IsComputerKeyDown(char c)
+    {
+#if ENABLE_INPUT_SYSTEM
+        var control = Keyboard.current?.FindKeyOnCurrentKeyboardLayout(c.ToString());
+        return control != null && control.isPressed;
+#else
+        return Input.GetKey((KeyCode)c);
+#endif
     }
 
     void BuildComputerKeyMap()
@@ -312,25 +264,14 @@ public class PianoController : MonoBehaviour
     void AddKeyRows(string whiteRow, string blackRow, int note)
     {
         if (string.IsNullOrEmpty(whiteRow)) return;
-        if (blackRow == null) blackRow = "";
-        if (blackPitchClass[((note % 12) + 12) % 12])
-        {
-            Debug.LogWarning("PianoController: keyboardBaseNote is a black key, moving it up to the next white key.");
-            note++;
-        }
+        blackRow = blackRow ?? "";
 
         for (int i = 0; i < whiteRow.Length; i++)
         {
             AddMapping(whiteRow[i], note);
-
             bool hasBlack = blackPitchClass[(note + 1) % 12];
             char blackChar = i < blackRow.Length ? blackRow[i] : ' ';
-            if (blackChar != ' ')
-            {
-                if (hasBlack) AddMapping(blackChar, note + 1);
-                else Debug.LogWarning($"PianoController: '{blackChar}' sits where there is no black key; it was skipped.");
-            }
-
+            if (hasBlack && blackChar != ' ') AddMapping(blackChar, note + 1);
             note += hasBlack ? 2 : 1;   // step to the next white key
         }
     }
@@ -359,90 +300,46 @@ public class PianoController : MonoBehaviour
             byNote.Remove(k.note);
             keys.RemoveAt(i);
         }
-        Debug.Log($"PianoController: showing {keys.Count} playable keys, the rest are hidden.");
-    }
-
-    bool IsComputerKeyDown(char c)
-    {
-#if ENABLE_INPUT_SYSTEM
-        if (Keyboard.current == null) return false;
-        var control = Keyboard.current.FindKeyOnCurrentKeyboardLayout(c.ToString());
-        return control != null && control.isPressed;
-#else
-        return Input.GetKey((KeyCode)char.ToLower(c));
-#endif
-    }
-
-    Key RaycastKey(Vector2 screenPos)
-    {
-        Camera cam = inputCamera != null ? inputCamera : Camera.main;
-        if (cam == null) return null;
-        if (Physics.Raycast(cam.ScreenPointToRay(screenPos), out RaycastHit hit, Mathf.Infinity, ~0, QueryTriggerInteraction.Collide))
-        {
-            for (Transform t = hit.collider.transform; t != null; t = t.parent)
-                if (byTransform.TryGetValue(t, out Key k)) { lastNonKeyHit = null; return k; }
-
-            if (logPresses && hit.collider != lastNonKeyHit)
-                Debug.Log($"PianoController: mouse hit '{hit.collider.name}', which isn't a key.");
-            lastNonKeyHit = hit.collider;
-        }
-        return null;
     }
 
     // ---------- Press / release ----------
 
     void Press(Key k)
     {
-        k.holdCount++;
-        if (k.holdCount > 1) return;
-        PlaySound(k);
-        if (logPresses)
-            Debug.Log($"PianoController: {k.t.name} down, MIDI {k.note} ({(k.black ? "black" : "white")}), " +
-                      $"clip {(k.src.clip != null ? k.src.clip.name : "NONE")}, playing {k.src.isPlaying}");
-        onNoteDown?.Invoke(k.note);
+        if (++k.holdCount == 1) PlaySound(k);
     }
 
     void Release(Key k)
     {
         if (k.holdCount == 0) return;
-        k.holdCount--;
-        if (k.holdCount > 0) return;
-        if (!sustain) StopSound(k);
-        onNoteUp?.Invoke(k.note);
+        if (--k.holdCount == 0 && !sustain) StopSound(k);
+    }
+
+    void SetSustain(bool on)
+    {
+        sustain = on;
+        if (on) return;
+        foreach (Key k in keys)
+            if (k.holdCount == 0 && k.sounding) StopSound(k);
     }
 
     // ---------- Animation ----------
 
     void AnimateKeys()
     {
-        Vector3 up = upAxis.normalized;
-        Vector3 axis = Vector3.Cross(towardBackAxis.normalized, up);
+        Vector3 axis = keysParent.TransformDirection(Vector3.Cross(towardBackAxis.normalized, upAxis.normalized));
 
         foreach (Key k in keys)
         {
             float target = k.holdCount > 0 ? 1f : 0f;
             float speed = 1f / Mathf.Max(0.001f, target > k.press ? pressTime : releaseTime);
             k.press = Mathf.MoveTowards(k.press, target, speed * Time.deltaTime);
-
             if (k.press <= 0f && !k.applied) continue;
 
+            // Hinge the key down around its back edge.
             k.t.localPosition = k.restPos;
             k.t.localRotation = k.restRot;
-
-            if (k.press > 0f)
-            {
-                if (pressStyle == PressStyle.Rotate)
-                {
-                    k.t.RotateAround(keysParent.TransformPoint(k.pivotLocal),
-                                     keysParent.TransformDirection(axis),
-                                     pressAngle * k.press);
-                }
-                else
-                {
-                    float depth = pressDepth > 0f ? pressDepth : k.length * 0.06f;
-                    k.t.position += keysParent.TransformDirection(-up * depth * k.press);
-                }
-            }
+            if (k.press > 0f) k.t.RotateAround(keysParent.TransformPoint(k.pivotLocal), axis, pressAngle * k.press);
             k.applied = k.press > 0f;
         }
     }
@@ -452,17 +349,8 @@ public class PianoController : MonoBehaviour
     void PlaySound(Key k)
     {
         if (k.fade != null) { StopCoroutine(k.fade); k.fade = null; }
-
-        if (sample != null)
-        {
-            k.src.clip = sample;
-            k.src.pitch = Mathf.Pow(2f, (k.note - sampleNote) / 12f);
-        }
-        else
-        {
-            k.src.clip = GetTone(k.note);
-            k.src.pitch = 1f;
-        }
+        k.src.clip = sample != null ? sample : GetTone(k.note);
+        k.src.pitch = sample != null ? Mathf.Pow(2f, (k.note - sampleNote) / 12f) : 1f;
         k.src.volume = volume;
         k.src.Play();
         k.sounding = true;
@@ -484,19 +372,17 @@ public class PianoController : MonoBehaviour
             yield return null;
         }
         k.src.Stop();
-        k.src.volume = volume;
         k.sounding = false;
         k.fade = null;
     }
 
     static AudioClip GetTone(int note)
     {
-        // The null check matters when domain reload is off: cached clips from the last Play session are destroyed.
+        // Null check: cached clips are destroyed between Play sessions when domain reload is off.
         if (toneCache.TryGetValue(note, out AudioClip clip) && clip != null) return clip;
 
         const int sr = 44100;
-        const float length = 3f;
-        int n = (int)(sr * length);
+        int n = sr * 3;
         float f = 440f * Mathf.Pow(2f, (note - 69) / 12f);
         float decay = 1.2f + f / 500f;           // higher notes die away faster
         var data = new float[n];
@@ -510,12 +396,10 @@ public class PianoController : MonoBehaviour
             {
                 float fh = f * h * (1f + 0.0004f * h * h);   // slight string inharmonicity
                 if (fh > sr * 0.45f) break;
-                float amp = 1f / Mathf.Pow(h, 1.4f);
-                s += amp * Mathf.Exp(-t * decay * (1f + 0.35f * h)) * Mathf.Sin(2f * Mathf.PI * fh * t);
+                s += Mathf.Exp(-t * decay * (1f + 0.35f * h)) * Mathf.Sin(2f * Mathf.PI * fh * t) / Mathf.Pow(h, 1.4f);
             }
-            s *= Mathf.Clamp01(t / 0.004f);             // short hammer attack
-            data[i] = s;
-            peak = Mathf.Max(peak, Mathf.Abs(s));
+            data[i] = s * Mathf.Clamp01(t / 0.004f);     // short hammer attack
+            peak = Mathf.Max(peak, Mathf.Abs(data[i]));
         }
         for (int i = 0; i < n; i++) data[i] *= 0.8f / peak;
 
@@ -525,7 +409,7 @@ public class PianoController : MonoBehaviour
         return clip;
     }
 
-    // ---------- Mesh splitting (for pianos where every key is one combined mesh) ----------
+    // ---------- Mesh splitting (the model's keys are all one mesh) ----------
 
     void TrySplitSingleMesh()
     {
@@ -545,12 +429,10 @@ public class PianoController : MonoBehaviour
         Material[] mats = sourceRenderer != null ? sourceRenderer.sharedMaterials : new Material[0];
         Vector3[] verts = mesh.vertices;
         Vector3[] normals = mesh.normals;
-        Vector2[] uvs = mesh.uv;
         int subCount = mesh.subMeshCount;
 
-        // Group vertices into connected pieces. Vertices at the same position are welded
-        // across all materials, since hard edges duplicate vertices and some models give
-        // one key faces in more than one material.
+        // Group triangles into connected pieces. Vertices at the same position are welded across
+        // materials, because hard edges duplicate vertices and one key can use both materials.
         int[] parent = new int[verts.Length];
         for (int i = 0; i < parent.Length; i++) parent[i] = i;
         float cell = Mathf.Max(1e-7f, mesh.bounds.size.magnitude * 1e-5f);
@@ -561,8 +443,7 @@ public class PianoController : MonoBehaviour
             int[] tris = mesh.GetTriangles(s);
             foreach (int v in tris)
             {
-                Vector3 p = verts[v] / cell;
-                var q = new Vector3Int(Mathf.RoundToInt(p.x), Mathf.RoundToInt(p.y), Mathf.RoundToInt(p.z));
+                Vector3Int q = Vector3Int.RoundToInt(verts[v] / cell);
                 if (firstAt.TryGetValue(q, out int other)) Union(parent, v, other);
                 else firstAt[q] = v;
             }
@@ -573,7 +454,7 @@ public class PianoController : MonoBehaviour
             }
         }
 
-        // Collect each piece's triangles, per material.
+        // Each piece's triangles, per material.
         var parts = new Dictionary<int, List<int>[]>();
         for (int s = 0; s < subCount; s++)
         {
@@ -587,7 +468,7 @@ public class PianoController : MonoBehaviour
                     for (int j = 0; j < subCount; j++) lists[j] = new List<int>();
                     parts[root] = lists;
                 }
-                lists[s].Add(tris[i]); lists[s].Add(tris[i + 1]); lists[s].Add(tris[i + 2]);
+                lists[s].AddRange(new[] { tris[i], tris[i + 1], tris[i + 2] });
             }
         }
         if (parts.Count < 2) return;
@@ -598,7 +479,6 @@ public class PianoController : MonoBehaviour
             var remap = new Dictionary<int, int>();
             var pv = new List<Vector3>();
             var pn = new List<Vector3>();
-            var puv = new List<Vector2>();
             var usedTris = new List<List<int>>();
             var usedMats = new List<Material>();
 
@@ -614,7 +494,6 @@ public class PianoController : MonoBehaviour
                         remap[v] = nv;
                         pv.Add(verts[v]);
                         if (normals.Length == verts.Length) pn.Add(normals[v]);
-                        if (uvs.Length == verts.Length) puv.Add(uvs[v]);
                     }
                     local.Add(nv);
                 }
@@ -628,27 +507,22 @@ public class PianoController : MonoBehaviour
             for (int i = 0; i < pv.Count; i++) pv[i] -= b.center;
 
             var m = new Mesh { name = mesh.name + "_key" + n };
-            if (pv.Count > 65535) m.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
             m.SetVertices(pv);
-            if (pn.Count == pv.Count) m.SetNormals(pn);
-            if (puv.Count == pv.Count) m.SetUVs(0, puv);
             m.subMeshCount = usedTris.Count;
             for (int j = 0; j < usedTris.Count; j++) m.SetTriangles(usedTris[j], j);
-            if (pn.Count != pv.Count) m.RecalculateNormals();
+            if (pn.Count == pv.Count) m.SetNormals(pn); else m.RecalculateNormals();
             m.RecalculateBounds();
 
-            var go = new GameObject("Key_" + n);
+            var go = new GameObject("Key_" + n++);
             go.transform.SetParent(source.transform, false);
             go.transform.localPosition = b.center;
             go.AddComponent<MeshFilter>().sharedMesh = m;
             go.AddComponent<MeshRenderer>().sharedMaterials = usedMats.ToArray();
-            n++;
         }
 
         if (sourceRenderer != null) sourceRenderer.enabled = false;
-        foreach (Collider c in source.GetComponents<Collider>()) c.enabled = false;
+        foreach (Collider c in source.GetComponents<Collider>()) c.enabled = false;   // don't block clicks on the keys
         keysParent = source.transform;
-        Debug.Log($"PianoController: split {mesh.name} into {parts.Count} keys.");
     }
 
     static int Find(int[] parent, int i)
@@ -665,29 +539,21 @@ public class PianoController : MonoBehaviour
 
     // ---------- Setup helpers ----------
 
-    void ClassifyBlackKeys(List<float> tops)
+    // Black keys stand taller than white keys.
+    void ClassifyBlackKeys(Dictionary<Key, float> tops)
     {
         float min = float.MaxValue, max = float.MinValue, avgLen = 0f;
-        foreach (float y in tops) { min = Mathf.Min(min, y); max = Mathf.Max(max, y); }
-        foreach (Key k in keys) avgLen += k.length;
+        foreach (Key k in keys) { min = Mathf.Min(min, tops[k]); max = Mathf.Max(max, tops[k]); avgLen += k.length; }
         avgLen /= keys.Count;
         bool heightsDiffer = (max - min) > avgLen * 0.02f;
         float mid = (min + max) * 0.5f;
-
-        for (int i = 0; i < keys.Count; i++)
-        {
-            string name = keys[i].t.name.ToLower();
-            if (name.Contains("black") || name.Contains("sharp") || name.Contains("#")) keys[i].black = true;
-            else if (name.Contains("white")) keys[i].black = false;
-            else keys[i].black = heightsDiffer && tops[i] > mid;
-        }
+        foreach (Key k in keys) k.black = heightsDiffer && tops[k] > mid;
     }
 
+    // Shifts firstNote so the black/white pattern of the keys matches a real keyboard.
     void DetectFirstNote()
     {
-        bool anyBlack = false;
-        foreach (Key k in keys) anyBlack |= k.black;
-        if (!anyBlack) return;
+        if (!keys.Exists(k => k.black)) return;
 
         int bestPc = 0, bestScore = -1;
         for (int pc = 0; pc < 12; pc++)
@@ -727,4 +593,4 @@ public class PianoController : MonoBehaviour
     {
         return Mathf.Abs(dir.x) * b.extents.x + Mathf.Abs(dir.y) * b.extents.y + Mathf.Abs(dir.z) * b.extents.z;
     }
-}
+}g
