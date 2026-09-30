@@ -229,6 +229,20 @@ public class PianoController : MonoBehaviour
         return true;
     }
 
+    /// <summary>Converts one of the piano axes above into a world-space direction.</summary>
+    public Vector3 WorldAxis(Vector3 localAxis)
+    {
+        Transform root = keysParent != null ? keysParent : transform;
+        return root.TransformDirection(localAxis).normalized;
+    }
+
+    /// <summary>Fills results with the MIDI notes of all visible keys, low to high.</summary>
+    public void GetPlayableNotes(List<int> results, bool whiteKeysOnly)
+    {
+        results.Clear();
+        foreach (Key k in keys) if (!whiteKeysOnly || !k.black) results.Add(k.note);
+    }
+
     public void SetSustain(bool on)
     {
         sustain = on;
